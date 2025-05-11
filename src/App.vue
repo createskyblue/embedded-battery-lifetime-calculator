@@ -20,6 +20,16 @@
         class="px-3 py-2 border rounded w-64"
       />
     </div>
+
+    <div class="mb-4">
+      <label class="inline-block w-32 mr-3">待机电流(mA):</label>
+      <input 
+        v-model.number="idleCurrent" 
+        type="number" 
+        placeholder="输入待机电流"
+        class="px-3 py-2 border rounded w-64"
+      />
+    </div>
     
     <div class="mt-8">
       <table class="w-full border-collapse">
@@ -80,6 +90,13 @@
       >
         添加项目
       </button>
+
+      <div class="mt-8 p-4 bg-gray-100 rounded">
+        <h2 class="text-xl font-semibold mb-2">电池寿命计算结果</h2>
+        <div class="text-2xl font-mono">
+          {{ calculateBatteryLife() }}
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -91,6 +108,7 @@ import axios from 'axios'
 import './styles/index.css'
 const projectName = ref('');
 const batteryCapacity = ref(null);
+const idleCurrent = ref(null);
 const items = ref([{
   name: '',
   current: null,
@@ -109,6 +127,80 @@ const addItem = () => {
 
 const removeItem = (index) => {
   items.value.splice(index, 1);
+};
+
+// 将时间字符串(hh:mm:ss或dd:hh:mm:ss)转换为秒数
+const parseTimeToSeconds = (timeStr) => {
+  if (!timeStr) return 0;
+  
+  const parts = timeStr.split(':').map(Number);
+  if (parts.length === 3) {
+    // hh:mm:ss格式
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  } else if (parts.length === 4) {
+    // dd:hh:mm:ss格式
+    return parts[0] * 86400 + parts[1] * 3600 + parts[2] * 60 + parts[3];
+  }
+  return 0;
+};
+
+const calculateBatteryLife = () => {
+  if (!batteryCapacity.value) return '00:00:00:00';
+  
+  let totalEnergy = 0; // 总能量消耗(mAh)
+  let hasActiveItems = false;
+  
+  // 计算所有任务的能量消耗
+  items.value.forEach(item => {
+    if (item.current && item.duration && item.interval) {
+      const durationSec = parseTimeToSeconds(item.duration);
+      const intervalSec = parseTimeToSeconds(item.interval);
+      
+      if (durationSec > 0 && intervalSec > 0) {
+        // 计算任务占空比和平均电流
+        const dutyCycle = durationSec / intervalSec;
+        const avgCurrent = item.current * dutyCycle;
+        totalEnergy += avgCurrent;
+        hasActiveItems = true;
+      }
+    }
+  });
+  
+  // 添加待机电流
+  if (idleCurrent.value) {
+    if (hasActiveItems) {
+      // 有任务时，待机电流按(1 - 占空比)计算
+      totalEnergy += idleCurrent.value * (1 - (totalEnergy / (totalEnergy + idleCurrent.value)));
+    } else {
+      // 无任务时，完全使用待机电流
+      totalEnergy = idleCurrent.value;
+      hasActiveItems = true;
+    }
+  }
+  
+  if (!hasActiveItems) return '00:00:00:00';
+  if (totalEnergy === 0) return '00:00:00:00';
+  
+  // 计算总小时数
+  const totalHours = batteryCapacity.value / totalEnergy;
+  
+  // 转换为年、天、小时、分钟、秒
+  const totalSeconds = Math.floor(totalHours * 3600);
+  const totalDays = Math.floor(totalSeconds / 86400);
+  const years = Math.floor(totalDays / 365);
+  const days = totalDays % 365;
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  
+  let result = '';
+  if (years > 0) result += `${years}年`;
+  if (days > 0 || years > 0) result += `${days}天`;
+  if (hours > 0 || days > 0 || years > 0) result += `${hours}时`;
+  if (minutes > 0 || hours > 0 || days > 0 || years > 0) result += `${minutes}分`;
+  result += `${seconds}秒`;
+  
+  return result || '0秒';
 };
 </script>
 
