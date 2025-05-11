@@ -62,15 +62,20 @@
             <td class="border p-1">
               <input 
                 v-model="item.duration" 
+                @blur="validateInterval(index)"
                 placeholder="00:00:00.000"
-                class="w-full px-2 py-1 border rounded"
+                :class="['w-full px-2 py-1 border rounded', item.hasError ? 'border-red-500' : '']"
               />
+              <div v-if="item.hasError" class="text-red-500 text-xs mt-1">
+                运行间隔必须大于单次运行时间
+              </div>
             </td>
             <td class="border p-1">
               <input 
                 v-model="item.interval" 
+                @blur="validateInterval(index)"
                 placeholder="00:00:00:00"
-                class="w-full px-2 py-1 border rounded"
+                :class="['w-full px-2 py-1 border rounded', item.hasError ? 'border-red-500' : '']"
               />
             </td>
             <td class="border p-1">
@@ -134,12 +139,26 @@ const items = ref([{
   interval: ''
 }]);
 
+const validateInterval = (index) => {
+  const item = items.value[index];
+  if (!item.duration || !item.interval) {
+    item.hasError = false;
+    return;
+  }
+  
+  const durationSec = parseTimeToSeconds(item.duration);
+  const intervalSec = parseTimeToSeconds(item.interval);
+  
+  item.hasError = intervalSec <= durationSec;
+};
+
 const addItem = () => {
   items.value.push({
     name: '',
     current: null,
     duration: '',
-    interval: ''
+    interval: '',
+    hasError: false
   });
 };
 
