@@ -1,6 +1,6 @@
 <template>
   <div class="max-w-4xl mx-auto p-5 font-sans">
-    <h1 class="text-2xl font-bold mb-6">电池低功耗计算器</h1>
+    <h1 class="text-2xl font-bold mb-6">电池寿命计算器</h1>
     
     <div class="mb-4">
       <label class="inline-block w-32 mr-3">项目名称:</label>
@@ -37,7 +37,7 @@
           <tr class="bg-gray-100">
             <th class="border p-2 text-left">名称</th>
             <th class="border p-2 text-left">电流(mA)</th>
-            <th class="border p-2 text-left">单次运行时间</th>
+            <th class="border p-2 text-left">单次运行时间(hh:mm:ss.ms)</th>
             <th class="border p-2 text-left">运行间隔(dd:hh:mm:ss)</th>
             <th class="border p-2 text-left">操作</th>
           </tr>
@@ -121,7 +121,7 @@
 
 <script setup>
 import { ref } from 'vue';
-import * as echarts from 'echarts'
+// import * as echarts from 'echarts'
 import axios from 'axios'
 import './styles/index.css'
 const projectName = ref('');
@@ -213,42 +213,52 @@ const importProject = (event) => {
 };
 
 const calculateBatteryLife = () => {
-  if (!batteryCapacity.value) return '00:00:00:00';
+  if (!batteryCapacity.value) return '0年0天0时0分0秒';
 
-  let totalEnergy = 0; // 总平均电流(mA)
-  let totalDuty = 0;
-  let hasActiveItems = false;
+  let totalEnergyPerCycle = 0; // 每周期耗电 (mAh)
+  let cycleDurationSec = 0;    // 总周期时长（取最大间隔）
 
-  // 计算每个任务的占空比和能量占比
+  // 计算每项任务的耗电量
   items.value.forEach(item => {
     if (item.current && item.duration && item.interval) {
       const durationSec = parseTimeToSeconds(item.duration);
       const intervalSec = parseTimeToSeconds(item.interval);
-      
-      if (durationSec > 0 && intervalSec > 0) {
-        const dutyCycle = durationSec / intervalSec;
-        const avgCurrent = item.current * dutyCycle;
-        totalEnergy += avgCurrent;
-        totalDuty += dutyCycle;
-        hasActiveItems = true;
+
+      if (intervalSec > 0 && durationSec > 0) {
+        // 运行期耗电
+        const runEnergy = (item.current * durationSec) / 3600;
+
+        // 统计周期
+        totalEnergyPerCycle += runEnergy;
+
+        // 找出最长周期（单位秒）
+        cycleDurationSec = Math.max(cycleDurationSec, intervalSec);
       }
     }
   });
 
-  // 考虑待机电流
-  if (idleCurrent.value) {
-    if (hasActiveItems) {
-      const idleDuty = Math.max(1 - totalDuty, 0); // 防止为负
-      totalEnergy += idleCurrent.value * idleDuty;
-    } else {
-      totalEnergy = idleCurrent.value;
-      hasActiveItems = true;
-    }
+  // 计算待机时间和耗电
+  if (idleCurrent.value && cycleDurationSec > 0) {
+    // 有运行项目才考虑待机
+    let runTimeSec = 0;
+    items.value.forEach(item => {
+      const durationSec = parseTimeToSeconds(item.duration);
+      const intervalSec = parseTimeToSeconds(item.interval);
+      if (intervalSec > 0 && durationSec > 0) {
+        runTimeSec += durationSec;
+      }
+    });
+
+    const idleTimeSec = Math.max(cycleDurationSec - runTimeSec, 0);
+    const idleEnergy = (idleCurrent.value * idleTimeSec) / 3600;
+    totalEnergyPerCycle += idleEnergy;
   }
 
-  if (!hasActiveItems || totalEnergy === 0) return '00:00:00:00';
+  // 如果所有耗电为 0，返回默认值
+  if (totalEnergyPerCycle === 0) return '00:00:00:00';
 
-  const totalHours = batteryCapacity.value / totalEnergy;
+  // 计算循环次数
+  const totalHours = (batteryCapacity.value / totalEnergyPerCycle) * (cycleDurationSec / 3600);
   const totalSeconds = Math.floor(totalHours * 3600);
 
   const years = Math.floor(totalSeconds / (365 * 86400));
@@ -266,6 +276,7 @@ const calculateBatteryLife = () => {
 
   return result;
 };
+
 
 </script>
 
