@@ -234,50 +234,31 @@ const importProject = (event) => {
 const calculateBatteryLife = () => {
   if (!batteryCapacity.value) return '0年0天0时0分0秒';
 
-  let totalEnergyPerCycle = 0; // 每周期耗电 (mAh)
-  let cycleDurationSec = 0;    // 总周期时长（取最大间隔）
+  let totalAvgCurrent = 0; // 总平均电流 (mA)
 
-  // 计算每项任务的耗电量
+  // 计算每项任务的平均电流贡献
   items.value.forEach(item => {
     if (item.current && item.duration && item.interval) {
       const durationSec = parseTimeToSeconds(item.duration);
       const intervalSec = parseTimeToSeconds(item.interval);
 
       if (intervalSec > 0 && durationSec > 0) {
-        // 运行期耗电
-        const runEnergy = (item.current * durationSec) / 3600;
-
-        // 统计周期
-        totalEnergyPerCycle += runEnergy;
-
-        // 找出最长周期（单位秒）
-        cycleDurationSec = Math.max(cycleDurationSec, intervalSec);
+        // 平均电流 = 工作电流 × 占空比
+        const avgCurrent = item.current * (durationSec / intervalSec);
+        totalAvgCurrent += avgCurrent;
       }
     }
   });
 
-  // 计算待机时间和耗电
-  if (idleCurrent.value && cycleDurationSec > 0) {
-    // 有运行项目才考虑待机
-    let runTimeSec = 0;
-    items.value.forEach(item => {
-      const durationSec = parseTimeToSeconds(item.duration);
-      const intervalSec = parseTimeToSeconds(item.interval);
-      if (intervalSec > 0 && durationSec > 0) {
-        runTimeSec += durationSec;
-      }
-    });
-
-    const idleTimeSec = Math.max(cycleDurationSec - runTimeSec, 0);
-    const idleEnergy = (idleCurrent.value * idleTimeSec) / 3600;
-    totalEnergyPerCycle += idleEnergy;
+  // 加上待机电流
+  if (idleCurrent.value) {
+    totalAvgCurrent += idleCurrent.value;
   }
 
-  // 如果所有耗电为 0，返回默认值
-  if (totalEnergyPerCycle === 0) return '00:00:00:00';
+  if (totalAvgCurrent === 0) return '0年0天0时0分0秒';
 
-  // 计算循环次数
-  const totalHours = (batteryCapacity.value / totalEnergyPerCycle) * (cycleDurationSec / 3600);
+  // 总小时 = 容量 / 总平均电流
+  const totalHours = batteryCapacity.value / totalAvgCurrent;
   const totalSeconds = Math.floor(totalHours * 3600);
 
   const years = Math.floor(totalSeconds / (365 * 86400));
