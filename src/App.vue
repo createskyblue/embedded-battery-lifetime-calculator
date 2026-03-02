@@ -32,56 +32,83 @@
     </div>
     
     <div class="mt-8">
-      <table class="w-full border-collapse">
+      <table class="w-full border-collapse shadow-sm rounded-lg overflow-hidden">
         <thead>
-          <tr class="bg-gray-100">
-            <th class="border p-2 text-left">名称</th>
-            <th class="border p-2 text-left">电流(mA)</th>
-            <th class="border p-2 text-left">单次运行时间(hh:mm:ss.ms)</th>
-            <th class="border p-2 text-left">运行间隔(dd:hh:mm:ss)</th>
-            <th class="border p-2 text-left">操作</th>
+          <tr class="bg-gray-800 text-white">
+            <th class="p-3 text-center w-16">
+              <label class="inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  :checked="allEnabled"
+                  @change="toggleAll"
+                  class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+              </label>
+            </th>
+            <th class="p-3 text-left">名称</th>
+            <th class="p-3 text-left w-28">电流(mA)</th>
+            <th class="p-3 text-left">单次运行时间</th>
+            <th class="p-3 text-left">运行间隔</th>
+            <th class="p-3 text-center w-20">操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(item, index) in items" :key="index" class="border">
-            <td class="border p-1">
-              <input 
-                v-model="item.name" 
+          <tr
+            v-for="(item, index) in items"
+            :key="index"
+            :class="['border-b border-gray-200 transition-colors', item.enabled ? 'bg-white hover:bg-gray-50' : 'bg-gray-100 text-gray-400']"
+          >
+            <td class="p-3 text-center">
+              <label class="inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  v-model="item.enabled"
+                  class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+              </label>
+            </td>
+            <td class="p-3">
+              <input
+                v-model="item.name"
                 placeholder="项目名称"
-                class="w-full px-2 py-1 border rounded"
+                :disabled="!item.enabled"
+                :class="['w-full px-3 py-2 border rounded-md text-sm transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
               />
             </td>
-            <td class="border p-1">
-              <input 
-                v-model.number="item.current" 
-                type="number" 
-                placeholder="电流"
-                class="w-full px-2 py-1 border rounded"
+            <td class="p-3">
+              <input
+                v-model.number="item.current"
+                type="number"
+                placeholder="mA"
+                :disabled="!item.enabled"
+                :class="['w-full px-3 py-2 border rounded-md text-sm transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
               />
             </td>
-            <td class="border p-1">
-              <input 
-                v-model="item.duration" 
+            <td class="p-3">
+              <input
+                v-model="item.duration"
                 @blur="validateInterval(index)"
-                placeholder="00:00:00.000"
-                :class="['w-full px-2 py-1 border rounded', item.hasError ? 'border-red-500' : '']"
+                placeholder="hh:mm:ss.ms"
+                :disabled="!item.enabled"
+                :class="['w-full px-3 py-2 border rounded-md text-sm font-mono transition-colors', item.enabled ? (item.hasError ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500') + ' outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
               />
-              <div v-if="item.hasError" class="text-red-500 text-xs mt-1">
+              <div v-if="item.enabled && item.hasError" class="text-red-500 text-xs mt-1">
                 运行间隔必须大于单次运行时间
               </div>
             </td>
-            <td class="border p-1">
-              <input 
-                v-model="item.interval" 
+            <td class="p-3">
+              <input
+                v-model="item.interval"
                 @blur="validateInterval(index)"
-                placeholder="00:00:00:00"
-                :class="['w-full px-2 py-1 border rounded', item.hasError ? 'border-red-500' : '']"
+                placeholder="dd:hh:mm:ss"
+                :disabled="!item.enabled"
+                :class="['w-full px-3 py-2 border rounded-md text-sm font-mono transition-colors', item.enabled ? (item.hasError ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500') + ' outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
               />
             </td>
-            <td class="border p-1">
-              <button 
+            <td class="p-3 text-center">
+              <button
                 @click="removeItem(index)"
-                class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                class="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm rounded-md transition-colors shadow-sm"
               >
                 删除
               </button>
@@ -125,7 +152,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 // import * as echarts from 'echarts'
 import axios from 'axios'
 import './styles/index.css'
@@ -133,11 +160,24 @@ const projectName = ref('');
 const batteryCapacity = ref(null);
 const idleCurrent = ref(null);
 const items = ref([{
+  enabled: true,
   name: '',
   current: null,
   duration: '',
   interval: ''
 }]);
+
+// 全选/取消全选
+const allEnabled = computed(() => {
+  return items.value.length > 0 && items.value.every(item => item.enabled);
+});
+
+const toggleAll = () => {
+  const newValue = !allEnabled.value;
+  items.value.forEach(item => {
+    item.enabled = newValue;
+  });
+};
 
 const validateInterval = (index) => {
   const item = items.value[index];
@@ -154,6 +194,7 @@ const validateInterval = (index) => {
 
 const addItem = () => {
   items.value.push({
+    enabled: true,
     name: '',
     current: null,
     duration: '',
@@ -236,9 +277,9 @@ const calculateBatteryLife = () => {
 
   let totalAvgCurrent = 0; // 总平均电流 (mA)
 
-  // 计算每项任务的平均电流贡献
+  // 计算每项任务的平均电流贡献（只计算启用的项目）
   items.value.forEach(item => {
-    if (item.current && item.duration && item.interval) {
+    if (item.enabled && item.current && item.duration && item.interval) {
       const durationSec = parseTimeToSeconds(item.duration);
       const intervalSec = parseTimeToSeconds(item.interval);
 
