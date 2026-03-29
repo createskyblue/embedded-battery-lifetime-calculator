@@ -8,18 +8,20 @@ import viteCompression from 'vite-plugin-compression'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/embedded-battery-lifetime-calculator/',
   plugins: [
     vue(),
     vueDevTools(),
     tailwindcss(),
-    viteCompression({
-      verbose: true,
-      disable: false,
-      threshold: 512,
-      algorithm: 'gzip',
-      ext: '.gz',
-      deleteOriginFile: true,
-    }),
+    // viteCompression 插件已禁用，避免生成 .gz 文件
+    // viteCompression({
+    //   verbose: true,
+    //   disable: false,
+    //   threshold: 512,
+    //   algorithm: 'gzip',
+    //   ext: '.gz',
+    //   deleteOriginFile: true,
+    // }),
   ],
   resolve: {
     alias: {

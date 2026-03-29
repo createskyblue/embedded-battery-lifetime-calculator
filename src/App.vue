@@ -49,6 +49,7 @@
             <th class="p-3 text-left w-28">电流(mA)</th>
             <th class="p-3 text-left">单次运行时间</th>
             <th class="p-3 text-left">运行间隔</th>
+            <th class="p-3 text-left w-32">每天运行次数</th>
             <th class="p-3 text-center w-20">操作</th>
           </tr>
         </thead>
@@ -99,10 +100,24 @@
             <td class="p-3">
               <input
                 v-model="item.interval"
-                @blur="validateInterval(index)"
+                @input="handleIntervalInput(index)"
+                @blur="handleIntervalBlur(index)"
                 placeholder="dd:hh:mm:ss"
                 :disabled="!item.enabled"
                 :class="['w-full px-3 py-2 border rounded-md text-sm font-mono transition-colors', item.enabled ? (item.hasError ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500') + ' outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
+              />
+            </td>
+            <td class="p-3">
+              <input
+                v-model="item.runsPerDay"
+                @input="handleRunsPerDayInput(index)"
+                @blur="handleRunsPerDayBlur(index)"
+                type="number"
+                min="0"
+                step="0.001"
+                placeholder="次数/天"
+                :disabled="!item.enabled"
+                :class="['w-full px-3 py-2 border rounded-md text-sm transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
               />
             </td>
             <td class="p-3 text-center">
@@ -153,8 +168,12 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-// import * as echarts from 'echarts'
-import axios from 'axios'
+import {
+  parseTimeToSeconds,
+  intervalToRunsPerDay,
+  runsPerDayToInterval,
+  formatRunsPerDay,
+} from './schedule';
 import './styles/index.css'
 const projectName = ref('');
 const batteryCapacity = ref(null);
@@ -164,7 +183,9 @@ const items = ref([{
   name: '',
   current: null,
   duration: '',
-  interval: ''
+  interval: '',
+  runsPerDay: '',
+  hasError: false
 }]);
 
 // 全选/取消全选
@@ -185,11 +206,45 @@ const validateInterval = (index) => {
     item.hasError = false;
     return;
   }
-  
+
   const durationSec = parseTimeToSeconds(item.duration);
   const intervalSec = parseTimeToSeconds(item.interval);
-  
+
   item.hasError = intervalSec <= durationSec;
+};
+
+const syncRunsPerDayFromInterval = (item) => {
+  item.runsPerDay = intervalToRunsPerDay(item.interval);
+};
+
+const syncIntervalFromRunsPerDay = (item) => {
+  item.interval = runsPerDayToInterval(item.runsPerDay);
+};
+
+const handleIntervalInput = (index) => {
+  const item = items.value[index];
+  syncRunsPerDayFromInterval(item);
+  validateInterval(index);
+};
+
+const handleIntervalBlur = (index) => {
+  const item = items.value[index];
+  syncRunsPerDayFromInterval(item);
+  validateInterval(index);
+};
+
+const handleRunsPerDayInput = (index) => {
+  const item = items.value[index];
+  item.runsPerDay = formatRunsPerDay(item.runsPerDay);
+  syncIntervalFromRunsPerDay(item);
+  validateInterval(index);
+};
+
+const handleRunsPerDayBlur = (index) => {
+  const item = items.value[index];
+  item.runsPerDay = formatRunsPerDay(item.runsPerDay);
+  syncIntervalFromRunsPerDay(item);
+  validateInterval(index);
 };
 
 const addItem = () => {
@@ -199,32 +254,13 @@ const addItem = () => {
     current: null,
     duration: '',
     interval: '',
+    runsPerDay: '',
     hasError: false
   });
 };
 
 const removeItem = (index) => {
   items.value.splice(index, 1);
-};
-
-// 将时间字符串(hh:mm:ss.msms或dd:hh:mm:ss.msms)转换为秒数
-const parseTimeToSeconds = (timeStr) => {
-  if (!timeStr) return 0;
-  
-  // 分割毫秒部分
-  const timeParts = timeStr.split('.');
-  const mainTime = timeParts[0];
-  const milliseconds = timeParts[1] ? Number(timeParts[1]) / 1000 : 0;
-  
-  const parts = mainTime.split(':').map(Number);
-  if (parts.length === 3) {
-    // hh:mm:ss格式
-    return parts[0] * 3600 + parts[1] * 60 + parts[2] + milliseconds;
-  } else if (parts.length === 4) {
-    // dd:hh:mm:ss格式
-    return parts[0] * 86400 + parts[1] * 3600 + parts[2] * 60 + parts[3] + milliseconds;
-  }
-  return 0;
 };
 
 // 导出项目数据
@@ -263,7 +299,16 @@ const importProject = (event) => {
       projectName.value = data.projectName || '';
       batteryCapacity.value = data.batteryCapacity || null;
       idleCurrent.value = data.idleCurrent || null;
-      items.value = data.items || [{ name: '', current: null, duration: '', interval: '' }];
+      items.value = (data.items || [{ enabled: true, name: '', current: null, duration: '', interval: '', runsPerDay: '', hasError: false }]).map((item) => ({
+        enabled: item.enabled ?? true,
+        name: item.name || '',
+        current: item.current ?? null,
+        duration: item.duration || '',
+        interval: item.interval || '',
+        runsPerDay: item.runsPerDay || intervalToRunsPerDay(item.interval || ''),
+        hasError: false
+      }));
+      items.value.forEach((_, index) => validateInterval(index));
     } catch (error) {
       alert('导入失败: 文件格式不正确');
     }
@@ -283,7 +328,7 @@ const calculateBatteryLife = () => {
       const durationSec = parseTimeToSeconds(item.duration);
       const intervalSec = parseTimeToSeconds(item.interval);
 
-      if (intervalSec > 0 && durationSec > 0) {
+      if (intervalSec > durationSec && durationSec > 0) {
         // 平均电流 = 工作电流 × 占空比
         const avgCurrent = item.current * (durationSec / intervalSec);
         totalAvgCurrent += avgCurrent;
