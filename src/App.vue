@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-4xl mx-auto p-5 font-sans">
+  <div class="max-w-7xl mx-auto p-5 font-sans">
     <h1 class="text-2xl font-bold mb-6">电池寿命计算器</h1>
     
     <div class="mb-4">
@@ -12,23 +12,39 @@
     </div>
     
     <div class="mb-4">
-      <label class="inline-block w-32 mr-3">电池容量(mAh):</label>
-      <input 
-        v-model.number="batteryCapacity" 
-        type="number" 
-        placeholder="输入电池容量"
-        class="px-3 py-2 border rounded w-64"
-      />
+      <label class="inline-block w-32 mr-3">电池容量:</label>
+      <div class="inline-flex gap-2 items-center">
+        <input
+          v-model.number="batteryCapacity"
+          type="number"
+          placeholder="输入电池容量"
+          class="px-3 py-2 border rounded w-48"
+        />
+        <select
+          v-model="batteryCapacityUnit"
+          class="px-3 py-2 border rounded bg-white"
+        >
+          <option v-for="unit in batteryCapacityUnits" :key="unit" :value="unit">{{ unit }}</option>
+        </select>
+      </div>
     </div>
 
     <div class="mb-4">
-      <label class="inline-block w-32 mr-3">待机电流(mA):</label>
-      <input 
-        v-model.number="idleCurrent" 
-        type="number" 
-        placeholder="输入待机电流"
-        class="px-3 py-2 border rounded w-64"
-      />
+      <label class="inline-block w-32 mr-3">待机电流:</label>
+      <div class="inline-flex gap-2 items-center">
+        <input
+          v-model.number="idleCurrent"
+          type="number"
+          placeholder="输入待机电流"
+          class="px-3 py-2 border rounded w-48"
+        />
+        <select
+          v-model="idleCurrentUnit"
+          class="px-3 py-2 border rounded bg-white"
+        >
+          <option v-for="unit in currentUnits" :key="unit" :value="unit">{{ unit }}</option>
+        </select>
+      </div>
     </div>
     
     <div class="mt-8">
@@ -46,7 +62,7 @@
               </label>
             </th>
             <th class="p-3 text-left">名称</th>
-            <th class="p-3 text-left w-28">电流(mA)</th>
+            <th class="p-3 text-left w-40">电流</th>
             <th class="p-3 text-left">单次运行时间</th>
             <th class="p-3 text-left">运行间隔</th>
             <th class="p-3 text-left w-32">每天运行次数</th>
@@ -77,44 +93,53 @@
               />
             </td>
             <td class="p-3">
-              <input
-                v-model.number="item.current"
-                type="number"
-                placeholder="mA"
-                :disabled="!item.enabled"
-                :class="['w-full px-3 py-2 border rounded-md text-sm transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
-              />
+              <div class="flex gap-2">
+                <input
+                  v-model.number="item.current"
+                  type="number"
+                  placeholder="数值"
+                  :disabled="!item.enabled"
+                  :class="['flex-1 min-w-0 px-3 py-2 border rounded-md text-sm transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
+                />
+                <select
+                  v-model="item.currentUnit"
+                  :disabled="!item.enabled"
+                  :class="['w-20 px-2 py-2 border rounded-md text-sm bg-white transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
+                >
+                  <option v-for="unit in currentUnits" :key="unit" :value="unit">{{ unit }}</option>
+                </select>
+              </div>
             </td>
             <td class="p-3">
-              <input
-                v-model="item.duration"
-                @blur="validateInterval(index)"
-                placeholder="hh:mm:ss.ms"
+              <button
+                type="button"
+                @click="openTimeEditor(index, 'duration')"
                 :disabled="!item.enabled"
-                :class="['w-full px-3 py-2 border rounded-md text-sm font-mono transition-colors', item.enabled ? (item.hasError ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500') + ' outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
-              />
+                :class="timeDisplayClass(item.enabled, item.hasError)"
+              >
+                {{ getTimeSummary(item.duration) }}
+              </button>
               <div v-if="item.enabled && item.hasError" class="text-red-500 text-xs mt-1">
                 运行间隔必须大于单次运行时间
               </div>
             </td>
             <td class="p-3">
-              <input
-                v-model="item.interval"
-                @input="handleIntervalInput(index)"
-                @blur="handleIntervalBlur(index)"
-                placeholder="dd:hh:mm:ss"
+              <button
+                type="button"
+                @click="openTimeEditor(index, 'interval')"
                 :disabled="!item.enabled"
-                :class="['w-full px-3 py-2 border rounded-md text-sm font-mono transition-colors', item.enabled ? (item.hasError ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500') + ' outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
-              />
+                :class="timeDisplayClass(item.enabled, item.hasError)"
+              >
+                {{ getTimeSummary(item.interval) }}
+              </button>
             </td>
             <td class="p-3">
               <input
                 v-model="item.runsPerDay"
                 @input="handleRunsPerDayInput(index)"
                 @blur="handleRunsPerDayBlur(index)"
-                type="number"
-                min="0"
-                step="0.001"
+                type="text"
+                inputmode="decimal"
                 placeholder="次数/天"
                 :disabled="!item.enabled"
                 :class="['w-full px-3 py-2 border rounded-md text-sm transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
@@ -162,6 +187,47 @@
           导出项目
         </button>
       </div>
+      <el-dialog
+        v-model="editorVisible"
+        :title="editorField === 'interval' ? '编辑运行间隔' : '编辑单次运行时间'"
+        width="680px"
+        @closed="closeTimeEditor"
+      >
+        <div class="grid grid-cols-5 gap-3">
+          <div>
+            <div class="text-sm text-gray-600 mb-1">天</div>
+            <input v-model="editorDraftParts.days" type="number" min="0" @input="handleEditorInput" @blur="handleEditorBlur" :class="intervalPartInputClass(true, editorHasError)" />
+          </div>
+          <div>
+            <div class="text-sm text-gray-600 mb-1">小时</div>
+            <input v-model="editorDraftParts.hours" type="number" min="0" @input="handleEditorInput" @blur="handleEditorBlur" :class="intervalPartInputClass(true, editorHasError)" />
+          </div>
+          <div>
+            <div class="text-sm text-gray-600 mb-1">分钟</div>
+            <input v-model="editorDraftParts.minutes" type="number" min="0" @input="handleEditorInput" @blur="handleEditorBlur" :class="intervalPartInputClass(true, editorHasError)" />
+          </div>
+          <div>
+            <div class="text-sm text-gray-600 mb-1">秒</div>
+            <input v-model="editorDraftParts.seconds" type="number" min="0" @input="handleEditorInput" @blur="handleEditorBlur" :class="intervalPartInputClass(true, editorHasError)" />
+          </div>
+          <div>
+            <div class="text-sm text-gray-600 mb-1">毫秒</div>
+            <input v-model="editorDraftParts.milliseconds" type="number" min="0" @input="handleEditorInput" @blur="handleEditorBlur" :class="intervalPartInputClass(true, editorHasError)" />
+          </div>
+        </div>
+        <div class="mt-4 text-sm text-gray-600">
+          预览：<span class="font-mono text-gray-800">{{ formatIntervalFromParts(editorDraftParts) || '未设置' }}</span>
+        </div>
+        <div v-if="editorHasError" class="mt-3 text-sm text-red-500">
+          运行间隔必须大于单次运行时间
+        </div>
+        <template #footer>
+          <div class="flex justify-end gap-3">
+            <button type="button" @click="closeTimeEditor" class="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50">取消</button>
+            <button type="button" @click="confirmTimeEditor" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300" :disabled="editorHasError">确认</button>
+          </div>
+        </template>
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -173,20 +239,46 @@ import {
   intervalToRunsPerDay,
   runsPerDayToInterval,
   formatRunsPerDay,
+  currentToMilliAmps,
+  capacityToMilliAmpHours,
+  secondsToIntervalParts,
+  normalizeIntervalParts,
+  formatIntervalFromParts,
+  formatTimeSummary,
+  shouldSyncRunsPerDayInput,
 } from './schedule';
 import './styles/index.css'
 const projectName = ref('');
 const batteryCapacity = ref(null);
+const batteryCapacityUnit = ref('mAh');
 const idleCurrent = ref(null);
-const items = ref([{
+const idleCurrentUnit = ref('mA');
+const currentUnits = ['A', 'mA', 'uA', 'nA'];
+const batteryCapacityUnits = ['Ah', 'mAh', 'uAh', 'nAh'];
+const createEmptyIntervalParts = () => ({
+  days: '',
+  hours: '',
+  minutes: '',
+  seconds: '',
+  milliseconds: '',
+});
+const createDefaultItem = () => ({
   enabled: true,
   name: '',
   current: null,
+  currentUnit: 'mA',
   duration: '',
   interval: '',
+  intervalParts: createEmptyIntervalParts(),
   runsPerDay: '',
-  hasError: false
-}]);
+  hasError: false,
+});
+const items = ref([createDefaultItem()]);
+const editorVisible = ref(false);
+const editorIndex = ref(null);
+const editorField = ref('interval');
+const editorDraftParts = ref(createEmptyIntervalParts());
+const editorHasError = ref(false);
 
 // 全选/取消全选
 const allEnabled = computed(() => {
@@ -199,6 +291,102 @@ const toggleAll = () => {
     item.enabled = newValue;
   });
 };
+
+const intervalPartInputClass = (enabled, hasError) => ([
+  'w-full min-w-0 px-2 py-2 border rounded-md text-sm transition-colors',
+  enabled
+    ? `${hasError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'} focus:ring-1 outline-none bg-white`
+    : 'bg-gray-100 border-gray-200 cursor-not-allowed',
+]);
+
+const timeDisplayClass = (enabled, hasError) => ([
+  'w-full min-h-10 px-3 py-2 border rounded-md text-sm text-left transition-colors',
+  enabled
+    ? `${hasError ? 'border-red-500 text-red-600 hover:border-red-600' : 'border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'} cursor-pointer`
+    : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed',
+]);
+
+const getItemTimeParts = (item, field) => {
+  const value = item[field];
+  return value ? secondsToIntervalParts(parseTimeToSeconds(value)) : createEmptyIntervalParts();
+};
+
+const updateEditorError = () => {
+  if (editorIndex.value === null) {
+    editorHasError.value = false;
+    return;
+  }
+
+  const item = items.value[editorIndex.value];
+  const draftValue = formatIntervalFromParts(editorDraftParts.value);
+  const draftSeconds = parseTimeToSeconds(draftValue);
+  const otherField = editorField.value === 'interval' ? 'duration' : 'interval';
+  const otherSeconds = parseTimeToSeconds(item[otherField]);
+
+  if (!draftValue || !item[otherField]) {
+    editorHasError.value = false;
+    return;
+  }
+
+  editorHasError.value = editorField.value === 'interval'
+    ? draftSeconds <= otherSeconds
+    : otherSeconds <= draftSeconds;
+};
+
+const openTimeEditor = (index, field) => {
+  const item = items.value[index];
+  if (!item.enabled) {
+    return;
+  }
+
+  editorIndex.value = index;
+  editorField.value = field;
+  editorDraftParts.value = getItemTimeParts(item, field);
+  editorVisible.value = true;
+  updateEditorError();
+};
+
+const handleEditorInput = () => {
+  updateEditorError();
+};
+
+const handleEditorBlur = () => {
+  editorDraftParts.value = normalizeIntervalParts(editorDraftParts.value);
+  updateEditorError();
+};
+
+const closeTimeEditor = () => {
+  editorVisible.value = false;
+  editorIndex.value = null;
+  editorField.value = 'interval';
+  editorDraftParts.value = createEmptyIntervalParts();
+  editorHasError.value = false;
+};
+
+const confirmTimeEditor = () => {
+  if (editorIndex.value === null) {
+    return;
+  }
+
+  handleEditorBlur();
+  if (editorHasError.value) {
+    return;
+  }
+
+  const item = items.value[editorIndex.value];
+  const formattedValue = formatIntervalFromParts(editorDraftParts.value);
+  item[editorField.value] = formattedValue;
+
+  if (editorField.value === 'interval') {
+    item.intervalParts = formattedValue ? { ...editorDraftParts.value } : createEmptyIntervalParts();
+    syncRunsPerDayFromInterval(item);
+  }
+
+  validateInterval(editorIndex.value);
+  closeTimeEditor();
+};
+
+const getTimeSummary = (value) => formatTimeSummary(value);
 
 const validateInterval = (index) => {
   const item = items.value[index];
@@ -217,24 +405,21 @@ const syncRunsPerDayFromInterval = (item) => {
   item.runsPerDay = intervalToRunsPerDay(item.interval);
 };
 
+const syncIntervalPartsFromInterval = (item) => {
+  item.intervalParts = secondsToIntervalParts(parseTimeToSeconds(item.interval));
+};
+
 const syncIntervalFromRunsPerDay = (item) => {
   item.interval = runsPerDayToInterval(item.runsPerDay);
-};
-
-const handleIntervalInput = (index) => {
-  const item = items.value[index];
-  syncRunsPerDayFromInterval(item);
-  validateInterval(index);
-};
-
-const handleIntervalBlur = (index) => {
-  const item = items.value[index];
-  syncRunsPerDayFromInterval(item);
-  validateInterval(index);
+  syncIntervalPartsFromInterval(item);
 };
 
 const handleRunsPerDayInput = (index) => {
   const item = items.value[index];
+  if (!shouldSyncRunsPerDayInput(item.runsPerDay)) {
+    return;
+  }
+
   item.runsPerDay = formatRunsPerDay(item.runsPerDay);
   syncIntervalFromRunsPerDay(item);
   validateInterval(index);
@@ -248,15 +433,7 @@ const handleRunsPerDayBlur = (index) => {
 };
 
 const addItem = () => {
-  items.value.push({
-    enabled: true,
-    name: '',
-    current: null,
-    duration: '',
-    interval: '',
-    runsPerDay: '',
-    hasError: false
-  });
+  items.value.push(createDefaultItem());
 };
 
 const removeItem = (index) => {
@@ -268,7 +445,9 @@ const exportProject = () => {
   const projectData = {
     projectName: projectName.value,
     batteryCapacity: batteryCapacity.value,
+    batteryCapacityUnit: batteryCapacityUnit.value,
     idleCurrent: idleCurrent.value,
+    idleCurrentUnit: idleCurrentUnit.value,
     items: items.value,
     timestamp: new Date().toISOString()
   };
@@ -297,17 +476,25 @@ const importProject = (event) => {
     try {
       const data = JSON.parse(e.target.result);
       projectName.value = data.projectName || '';
-      batteryCapacity.value = data.batteryCapacity || null;
-      idleCurrent.value = data.idleCurrent || null;
-      items.value = (data.items || [{ enabled: true, name: '', current: null, duration: '', interval: '', runsPerDay: '', hasError: false }]).map((item) => ({
-        enabled: item.enabled ?? true,
-        name: item.name || '',
-        current: item.current ?? null,
-        duration: item.duration || '',
-        interval: item.interval || '',
-        runsPerDay: item.runsPerDay || intervalToRunsPerDay(item.interval || ''),
-        hasError: false
-      }));
+      batteryCapacity.value = data.batteryCapacity ?? null;
+      batteryCapacityUnit.value = data.batteryCapacityUnit || 'mAh';
+      idleCurrent.value = data.idleCurrent ?? null;
+      idleCurrentUnit.value = data.idleCurrentUnit || 'mA';
+      items.value = (data.items || [createDefaultItem()]).map((item) => {
+        const interval = item.interval || '';
+        return {
+          ...createDefaultItem(),
+          enabled: item.enabled ?? true,
+          name: item.name || '',
+          current: item.current ?? null,
+          currentUnit: item.currentUnit || 'mA',
+          duration: item.duration || '',
+          interval,
+          intervalParts: interval ? secondsToIntervalParts(parseTimeToSeconds(interval)) : createEmptyIntervalParts(),
+          runsPerDay: item.runsPerDay || intervalToRunsPerDay(interval),
+          hasError: false,
+        };
+      });
       items.value.forEach((_, index) => validateInterval(index));
     } catch (error) {
       alert('导入失败: 文件格式不正确');
@@ -318,7 +505,8 @@ const importProject = (event) => {
 };
 
 const calculateBatteryLife = () => {
-  if (!batteryCapacity.value) return '0年0天0时0分0秒';
+  const batteryCapacityMilliAmpHours = capacityToMilliAmpHours(batteryCapacity.value, batteryCapacityUnit.value);
+  if (!batteryCapacityMilliAmpHours) return '0年0天0时0分0秒';
 
   let totalAvgCurrent = 0; // 总平均电流 (mA)
 
@@ -327,24 +515,26 @@ const calculateBatteryLife = () => {
     if (item.enabled && item.current && item.duration && item.interval) {
       const durationSec = parseTimeToSeconds(item.duration);
       const intervalSec = parseTimeToSeconds(item.interval);
+      const currentMilliAmps = currentToMilliAmps(item.current, item.currentUnit);
 
-      if (intervalSec > durationSec && durationSec > 0) {
+      if (intervalSec > durationSec && durationSec > 0 && currentMilliAmps > 0) {
         // 平均电流 = 工作电流 × 占空比
-        const avgCurrent = item.current * (durationSec / intervalSec);
+        const avgCurrent = currentMilliAmps * (durationSec / intervalSec);
         totalAvgCurrent += avgCurrent;
       }
     }
   });
 
   // 加上待机电流
-  if (idleCurrent.value) {
-    totalAvgCurrent += idleCurrent.value;
+  const idleCurrentMilliAmps = currentToMilliAmps(idleCurrent.value, idleCurrentUnit.value);
+  if (idleCurrentMilliAmps) {
+    totalAvgCurrent += idleCurrentMilliAmps;
   }
 
   if (totalAvgCurrent === 0) return '0年0天0时0分0秒';
 
   // 总小时 = 容量 / 总平均电流
-  const totalHours = batteryCapacity.value / totalAvgCurrent;
+  const totalHours = batteryCapacityMilliAmpHours / totalAvgCurrent;
   const totalSeconds = Math.floor(totalHours * 3600);
 
   const years = Math.floor(totalSeconds / (365 * 86400));

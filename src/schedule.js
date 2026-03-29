@@ -1,4 +1,142 @@
 export const SECONDS_PER_DAY = 24 * 60 * 60;
+export const MILLISECONDS_PER_SECOND = 1000;
+
+export const CURRENT_UNIT_FACTORS = {
+  A: 1000,
+  mA: 1,
+  uA: 0.001,
+  nA: 0.000001,
+};
+
+export const CAPACITY_UNIT_FACTORS = {
+  Ah: 1000,
+  mAh: 1,
+  uAh: 0.001,
+  nAh: 0.000001,
+};
+
+const toSafeNumber = (value) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+};
+
+export const intervalPartsToSeconds = (parts = {}) => {
+  const days = toSafeNumber(parts.days);
+  const hours = toSafeNumber(parts.hours);
+  const minutes = toSafeNumber(parts.minutes);
+  const seconds = toSafeNumber(parts.seconds);
+  const milliseconds = toSafeNumber(parts.milliseconds);
+
+  return days * SECONDS_PER_DAY
+    + hours * 3600
+    + minutes * 60
+    + seconds
+    + milliseconds / MILLISECONDS_PER_SECOND;
+};
+
+export const secondsToIntervalParts = (totalSeconds) => {
+  const numericSeconds = Number(totalSeconds);
+  if (!Number.isFinite(numericSeconds) || numericSeconds <= 0) {
+    return {
+      days: '',
+      hours: '',
+      minutes: '',
+      seconds: '',
+      milliseconds: '',
+    };
+  }
+
+  const wholeSeconds = Math.floor(numericSeconds);
+  const milliseconds = Math.round((numericSeconds - wholeSeconds) * MILLISECONDS_PER_SECOND);
+  const days = Math.floor(wholeSeconds / SECONDS_PER_DAY);
+  const hours = Math.floor((wholeSeconds % SECONDS_PER_DAY) / 3600);
+  const minutes = Math.floor((wholeSeconds % 3600) / 60);
+  const seconds = wholeSeconds % 60;
+
+  return {
+    days: String(days),
+    hours: String(hours),
+    minutes: String(minutes),
+    seconds: String(seconds),
+    milliseconds: String(milliseconds),
+  };
+};
+
+export const normalizeIntervalParts = (parts = {}) => {
+  return secondsToIntervalParts(intervalPartsToSeconds(parts));
+};
+
+export const formatIntervalFromParts = (parts = {}) => {
+  const normalizedParts = normalizeIntervalParts(parts);
+  const hasValue = Object.values(normalizedParts).some((value) => value !== '');
+  if (!hasValue) {
+    return '';
+  }
+
+  const days = normalizedParts.days.padStart(2, '0');
+  const hours = normalizedParts.hours.padStart(2, '0');
+  const minutes = normalizedParts.minutes.padStart(2, '0');
+  const seconds = normalizedParts.seconds.padStart(2, '0');
+  const milliseconds = normalizedParts.milliseconds;
+
+  return `${days}:${hours}:${minutes}:${seconds}${milliseconds ? `.${milliseconds.padStart(3, '0')}` : ''}`;
+};
+
+export const formatTimeSummary = (timeStr) => {
+  if (!timeStr) {
+    return '点击设置';
+  }
+
+  const parts = secondsToIntervalParts(parseTimeToSeconds(timeStr));
+  const labels = [
+    ['days', '天'],
+    ['hours', '时'],
+    ['minutes', '分'],
+    ['seconds', '秒'],
+    ['milliseconds', '毫秒'],
+  ];
+
+  const segments = labels
+    .filter(([key]) => parts[key] && parts[key] !== '0')
+    .map(([key, label]) => `${Number(parts[key])}${label}`);
+
+  return segments.length > 0 ? segments.join(' ') : '0秒';
+};
+
+export const shouldSyncRunsPerDayInput = (value) => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (!/^\d*\.?\d*$/.test(normalized)) {
+    return false;
+  }
+
+  return !normalized.endsWith('.');
+};
+
+export const currentToMilliAmps = (value, unit = 'mA') => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+
+  return numericValue * (CURRENT_UNIT_FACTORS[unit] ?? 1);
+};
+
+export const capacityToMilliAmpHours = (value, unit = 'mAh') => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+
+  return numericValue * (CAPACITY_UNIT_FACTORS[unit] ?? 1);
+};
 
 export const parseTimeToSeconds = (timeStr) => {
   if (!timeStr) return 0;
