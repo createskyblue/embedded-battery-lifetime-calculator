@@ -15,6 +15,8 @@ export const CAPACITY_UNIT_FACTORS = {
   nAh: 0.000001,
 };
 
+export const CONTINUOUS_INTERVAL = 'continuous';
+
 const toSafeNumber = (value) => {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : 0;
@@ -87,6 +89,10 @@ export const formatTimeSummary = (timeStr) => {
     return '点击设置';
   }
 
+  if (isContinuousInterval(timeStr)) {
+    return '持续运行';
+  }
+
   const parts = secondsToIntervalParts(parseTimeToSeconds(timeStr));
   const labels = [
     ['days', '天'],
@@ -113,11 +119,17 @@ export const shouldSyncRunsPerDayInput = (value) => {
     return false;
   }
 
-  if (!/^\d*\.?\d*$/.test(normalized)) {
+  if (!/^[\d]*\.?\d*$/.test(normalized)) {
     return false;
   }
 
   return !normalized.endsWith('.');
+};
+
+export const isContinuousInterval = (interval) => interval === CONTINUOUS_INTERVAL;
+
+export const formatRunsPerDayDisplay = (interval) => {
+  return isContinuousInterval(interval) ? '持续运行' : '';
 };
 
 export const currentToMilliAmps = (value, unit = 'mA') => {
@@ -136,6 +148,21 @@ export const capacityToMilliAmpHours = (value, unit = 'mAh') => {
   }
 
   return numericValue * (CAPACITY_UNIT_FACTORS[unit] ?? 1);
+};
+
+export const isIntervalValid = (duration, interval) => {
+  if (isContinuousInterval(interval)) {
+    return true;
+  }
+
+  const durationSeconds = typeof duration === 'number' ? duration : parseTimeToSeconds(duration);
+  const intervalSeconds = typeof interval === 'number' ? interval : parseTimeToSeconds(interval);
+
+  if (!durationSeconds || !intervalSeconds) {
+    return true;
+  }
+
+  return intervalSeconds >= durationSeconds;
 };
 
 export const parseTimeToSeconds = (timeStr) => {
@@ -194,6 +221,10 @@ export const formatRunsPerDay = (runsPerDay) => {
 };
 
 export const intervalToRunsPerDay = (interval) => {
+  if (isContinuousInterval(interval)) {
+    return '';
+  }
+
   const intervalSeconds = typeof interval === 'number' ? interval : parseTimeToSeconds(interval);
   if (!intervalSeconds) {
     return '';

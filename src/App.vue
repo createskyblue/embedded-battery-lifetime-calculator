@@ -114,13 +114,13 @@
               <button
                 type="button"
                 @click="openTimeEditor(index, 'duration')"
-                :disabled="!item.enabled"
-                :class="timeDisplayClass(item.enabled, item.hasError)"
+                :disabled="!item.enabled || isContinuousInterval(item.interval)"
+                :class="timeDisplayClass(item.enabled && !isContinuousInterval(item.interval), item.hasError)"
               >
-                {{ getTimeSummary(item.duration) }}
+                {{ isContinuousInterval(item.interval) ? '不需要设置' : getTimeSummary(item.duration) }}
               </button>
-              <div v-if="item.enabled && item.hasError" class="text-red-500 text-xs mt-1">
-                运行间隔必须大于单次运行时间
+              <div v-if="item.enabled && item.hasError && !isContinuousInterval(item.interval)" class="text-red-500 text-xs mt-1">
+                运行间隔必须大于等于单次运行时间
               </div>
             </td>
             <td class="p-3">
@@ -140,9 +140,9 @@
                 @blur="handleRunsPerDayBlur(index)"
                 type="text"
                 inputmode="decimal"
-                placeholder="次数/天"
-                :disabled="!item.enabled"
-                :class="['w-full px-3 py-2 border rounded-md text-sm transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
+                :placeholder="isContinuousInterval(item.interval) ? '持续运行' : '次数/天'"
+                :disabled="!item.enabled || isContinuousInterval(item.interval)"
+                :class="['w-full px-3 py-2 border rounded-md text-sm transition-colors', item.enabled && !isContinuousInterval(item.interval) ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
               />
             </td>
             <td class="p-3 text-center">
@@ -193,7 +193,18 @@
         width="680px"
         @closed="closeTimeEditor"
       >
-        <div class="grid grid-cols-5 gap-3">
+        <div v-if="editorField === 'interval'" class="mb-4 flex items-center gap-3 rounded border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-gray-700">
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              :checked="editorDraftIsContinuous"
+              @change="toggleContinuousInterval($event.target.checked)"
+            />
+            <span>持续运行</span>
+          </label>
+          <span class="text-xs text-gray-500">开启后将不再要求填写单次运行时间，并按 100% 占空比计算</span>
+        </div>
+        <div class="grid grid-cols-5 gap-3" :class="editorDraftIsContinuous ? 'opacity-50 pointer-events-none' : ''">
           <div>
             <div class="text-sm text-gray-600 mb-1">天</div>
             <input v-model="editorDraftParts.days" type="number" min="0" @input="handleEditorInput" @blur="handleEditorBlur" :class="intervalPartInputClass(true, editorHasError)" />
@@ -216,10 +227,10 @@
           </div>
         </div>
         <div class="mt-4 text-sm text-gray-600">
-          预览：<span class="font-mono text-gray-800">{{ formatIntervalFromParts(editorDraftParts) || '未设置' }}</span>
+          预览：<span class="font-mono text-gray-800">{{ editorDraftIsContinuous ? '持续运行' : (formatIntervalFromParts(editorDraftParts) || '未设置') }}</span>
         </div>
-        <div v-if="editorHasError" class="mt-3 text-sm text-red-500">
-          运行间隔必须大于单次运行时间
+        <div v-if="editorHasError && !editorDraftIsContinuous" class="mt-3 text-sm text-red-500">
+          运行间隔必须大于等于单次运行时间
         </div>
         <template #footer>
           <div class="flex justify-end gap-3">
@@ -246,6 +257,10 @@ import {
   formatIntervalFromParts,
   formatTimeSummary,
   shouldSyncRunsPerDayInput,
+  isIntervalValid,
+  CONTINUOUS_INTERVAL,
+  isContinuousInterval,
+  formatRunsPerDayDisplay,
 } from './schedule';
 import './styles/index.css'
 const projectName = ref('');
@@ -279,6 +294,7 @@ const editorIndex = ref(null);
 const editorField = ref('interval');
 const editorDraftParts = ref(createEmptyIntervalParts());
 const editorHasError = ref(false);
+const editorDraftIsContinuous = ref(false);
 
 // 全选/取消全选
 const allEnabled = computed(() => {
@@ -308,7 +324,19 @@ const timeDisplayClass = (enabled, hasError) => ([
 
 const getItemTimeParts = (item, field) => {
   const value = item[field];
-  return value ? secondsToIntervalParts(parseTimeToSeconds(value)) : createEmptyIntervalParts();
+  if (!value || isContinuousInterval(value)) {
+    return createEmptyIntervalParts();
+  }
+
+  return secondsToIntervalParts(parseTimeToSeconds(value));
+};
+
+const toggleContinuousInterval = (checked) => {
+  editorDraftIsContinuous.value = checked;
+  if (checked) {
+    editorDraftParts.value = createEmptyIntervalParts();
+  }
+  updateEditorError();
 };
 
 const updateEditorError = () => {
@@ -318,19 +346,18 @@ const updateEditorError = () => {
   }
 
   const item = items.value[editorIndex.value];
-  const draftValue = formatIntervalFromParts(editorDraftParts.value);
-  const draftSeconds = parseTimeToSeconds(draftValue);
+  const draftValue = editorDraftIsContinuous.value ? CONTINUOUS_INTERVAL : formatIntervalFromParts(editorDraftParts.value);
   const otherField = editorField.value === 'interval' ? 'duration' : 'interval';
-  const otherSeconds = parseTimeToSeconds(item[otherField]);
 
   if (!draftValue || !item[otherField]) {
     editorHasError.value = false;
     return;
   }
 
-  editorHasError.value = editorField.value === 'interval'
-    ? draftSeconds <= otherSeconds
-    : otherSeconds <= draftSeconds;
+  editorHasError.value = !isIntervalValid(
+    editorField.value === 'duration' ? draftValue : item.duration,
+    editorField.value === 'interval' ? draftValue : item.interval,
+  );
 };
 
 const openTimeEditor = (index, field) => {
@@ -341,6 +368,7 @@ const openTimeEditor = (index, field) => {
 
   editorIndex.value = index;
   editorField.value = field;
+  editorDraftIsContinuous.value = field === 'interval' && isContinuousInterval(item.interval);
   editorDraftParts.value = getItemTimeParts(item, field);
   editorVisible.value = true;
   updateEditorError();
@@ -351,6 +379,11 @@ const handleEditorInput = () => {
 };
 
 const handleEditorBlur = () => {
+  if (editorDraftIsContinuous.value) {
+    updateEditorError();
+    return;
+  }
+
   editorDraftParts.value = normalizeIntervalParts(editorDraftParts.value);
   updateEditorError();
 };
@@ -361,6 +394,7 @@ const closeTimeEditor = () => {
   editorField.value = 'interval';
   editorDraftParts.value = createEmptyIntervalParts();
   editorHasError.value = false;
+  editorDraftIsContinuous.value = false;
 };
 
 const confirmTimeEditor = () => {
@@ -374,12 +408,14 @@ const confirmTimeEditor = () => {
   }
 
   const item = items.value[editorIndex.value];
-  const formattedValue = formatIntervalFromParts(editorDraftParts.value);
+  const formattedValue = editorDraftIsContinuous.value ? CONTINUOUS_INTERVAL : formatIntervalFromParts(editorDraftParts.value);
   item[editorField.value] = formattedValue;
 
   if (editorField.value === 'interval') {
-    item.intervalParts = formattedValue ? { ...editorDraftParts.value } : createEmptyIntervalParts();
-    syncRunsPerDayFromInterval(item);
+    item.intervalParts = editorDraftIsContinuous.value
+      ? createEmptyIntervalParts()
+      : (formattedValue ? { ...editorDraftParts.value } : createEmptyIntervalParts());
+    item.runsPerDay = editorDraftIsContinuous.value ? formatRunsPerDayDisplay(formattedValue) : intervalToRunsPerDay(formattedValue);
   }
 
   validateInterval(editorIndex.value);
@@ -390,23 +426,24 @@ const getTimeSummary = (value) => formatTimeSummary(value);
 
 const validateInterval = (index) => {
   const item = items.value[index];
-  if (!item.duration || !item.interval) {
+  if (isContinuousInterval(item.interval) || !item.duration || !item.interval) {
     item.hasError = false;
     return;
   }
 
-  const durationSec = parseTimeToSeconds(item.duration);
-  const intervalSec = parseTimeToSeconds(item.interval);
-
-  item.hasError = intervalSec <= durationSec;
+  item.hasError = !isIntervalValid(item.duration, item.interval);
 };
 
 const syncRunsPerDayFromInterval = (item) => {
-  item.runsPerDay = intervalToRunsPerDay(item.interval);
+  item.runsPerDay = isContinuousInterval(item.interval)
+    ? formatRunsPerDayDisplay(item.interval)
+    : intervalToRunsPerDay(item.interval);
 };
 
 const syncIntervalPartsFromInterval = (item) => {
-  item.intervalParts = secondsToIntervalParts(parseTimeToSeconds(item.interval));
+  item.intervalParts = isContinuousInterval(item.interval)
+    ? createEmptyIntervalParts()
+    : secondsToIntervalParts(parseTimeToSeconds(item.interval));
 };
 
 const syncIntervalFromRunsPerDay = (item) => {
@@ -416,7 +453,7 @@ const syncIntervalFromRunsPerDay = (item) => {
 
 const handleRunsPerDayInput = (index) => {
   const item = items.value[index];
-  if (!shouldSyncRunsPerDayInput(item.runsPerDay)) {
+  if (isContinuousInterval(item.interval) || !shouldSyncRunsPerDayInput(item.runsPerDay)) {
     return;
   }
 
@@ -427,6 +464,11 @@ const handleRunsPerDayInput = (index) => {
 
 const handleRunsPerDayBlur = (index) => {
   const item = items.value[index];
+  if (isContinuousInterval(item.interval)) {
+    item.runsPerDay = formatRunsPerDayDisplay(item.interval);
+    return;
+  }
+
   item.runsPerDay = formatRunsPerDay(item.runsPerDay);
   syncIntervalFromRunsPerDay(item);
   validateInterval(index);
@@ -482,6 +524,7 @@ const importProject = (event) => {
       idleCurrentUnit.value = data.idleCurrentUnit || 'mA';
       items.value = (data.items || [createDefaultItem()]).map((item) => {
         const interval = item.interval || '';
+        const isContinuous = isContinuousInterval(interval);
         return {
           ...createDefaultItem(),
           enabled: item.enabled ?? true,
@@ -490,8 +533,8 @@ const importProject = (event) => {
           currentUnit: item.currentUnit || 'mA',
           duration: item.duration || '',
           interval,
-          intervalParts: interval ? secondsToIntervalParts(parseTimeToSeconds(interval)) : createEmptyIntervalParts(),
-          runsPerDay: item.runsPerDay || intervalToRunsPerDay(interval),
+          intervalParts: isContinuous ? createEmptyIntervalParts() : (interval ? secondsToIntervalParts(parseTimeToSeconds(interval)) : createEmptyIntervalParts()),
+          runsPerDay: isContinuous ? formatRunsPerDayDisplay(interval) : (item.runsPerDay || intervalToRunsPerDay(interval)),
           hasError: false,
         };
       });
@@ -512,16 +555,31 @@ const calculateBatteryLife = () => {
 
   // 计算每项任务的平均电流贡献（只计算启用的项目）
   items.value.forEach(item => {
-    if (item.enabled && item.current && item.duration && item.interval) {
-      const durationSec = parseTimeToSeconds(item.duration);
-      const intervalSec = parseTimeToSeconds(item.interval);
-      const currentMilliAmps = currentToMilliAmps(item.current, item.currentUnit);
+    if (!item.enabled || !item.current) {
+      return;
+    }
 
-      if (intervalSec > durationSec && durationSec > 0 && currentMilliAmps > 0) {
-        // 平均电流 = 工作电流 × 占空比
-        const avgCurrent = currentMilliAmps * (durationSec / intervalSec);
-        totalAvgCurrent += avgCurrent;
-      }
+    const currentMilliAmps = currentToMilliAmps(item.current, item.currentUnit);
+    if (currentMilliAmps <= 0) {
+      return;
+    }
+
+    if (isContinuousInterval(item.interval)) {
+      totalAvgCurrent += currentMilliAmps;
+      return;
+    }
+
+    if (!item.duration || !item.interval) {
+      return;
+    }
+
+    const durationSec = parseTimeToSeconds(item.duration);
+    const intervalSec = parseTimeToSeconds(item.interval);
+
+    if (intervalSec >= durationSec && durationSec > 0) {
+      // 平均电流 = 工作电流 × 占空比
+      const avgCurrent = currentMilliAmps * (durationSec / intervalSec);
+      totalAvgCurrent += avgCurrent;
     }
   });
 

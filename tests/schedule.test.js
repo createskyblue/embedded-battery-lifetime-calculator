@@ -14,6 +14,10 @@ import {
   formatTimeSummary,
   shouldSyncRunsPerDayInput,
   capacityToMilliAmpHours,
+  isIntervalValid,
+  CONTINUOUS_INTERVAL,
+  isContinuousInterval,
+  formatRunsPerDayDisplay,
 } from '../src/schedule.js';
 
 test('converts interval to runs per day', () => {
@@ -88,4 +92,22 @@ test('converts battery capacity units to mAh', () => {
   assert.equal(capacityToMilliAmpHours(2, 'Ah'), 2000);
   assert.equal(capacityToMilliAmpHours(500, 'uAh'), 0.5);
   assert.ok(Math.abs(capacityToMilliAmpHours(800000, 'nAh') - 0.8) < 1e-12);
+});
+
+test('treats equal duration and interval as valid', () => {
+  assert.equal(isIntervalValid('00:00:00:30', '00:00:00:30'), true);
+  assert.equal(isIntervalValid('00:00:00:29', '00:00:00:30'), true);
+  assert.equal(isIntervalValid('00:00:00:31', '00:00:00:30'), false);
+});
+
+test('treats continuous interval as valid without duration', () => {
+  assert.equal(CONTINUOUS_INTERVAL, 'continuous');
+  assert.equal(isContinuousInterval(CONTINUOUS_INTERVAL), true);
+  assert.equal(isIntervalValid('', CONTINUOUS_INTERVAL), true);
+  assert.equal(isIntervalValid('00:00:00:30', CONTINUOUS_INTERVAL), true);
+});
+
+test('does not derive runs per day for continuous interval', () => {
+  assert.equal(formatRunsPerDayDisplay(CONTINUOUS_INTERVAL), '持续运行');
+  assert.equal(intervalToRunsPerDay(CONTINUOUS_INTERVAL), '');
 });
