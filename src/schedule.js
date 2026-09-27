@@ -241,3 +241,63 @@ export const runsPerDayToInterval = (runsPerDay) => {
 
   return formatSecondsToInterval(SECONDS_PER_DAY / numericRuns);
 };
+
+export const INPUT_MODE_CURRENT = 'current';
+export const INPUT_MODE_CHARGE = 'charge';
+
+export const isChargeInputMode = (item) => item?.inputMode === INPUT_MODE_CHARGE;
+
+// 单项负载的平均电流贡献 (mA)，未启用或数据不完整时返回 0
+export const itemAverageCurrentMilliAmps = (item) => {
+  if (!item || !item.enabled) {
+    return 0;
+  }
+
+  if (isChargeInputMode(item)) {
+    // 耗电量模式：平均电流 = 单次耗电量(mAh) ÷ 运行间隔(h)
+    const chargeMilliAmpHours = capacityToMilliAmpHours(item.charge, item.chargeUnit);
+    if (chargeMilliAmpHours <= 0) {
+      return 0;
+    }
+
+    if (isContinuousInterval(item.interval)) {
+      // 持续运行没有“单次”概念，按每天耗电量计
+      return chargeMilliAmpHours / 24;
+    }
+
+    const chargeIntervalHours = parseTimeToSeconds(item.interval) / 3600;
+    if (chargeIntervalHours <= 0) {
+      return 0;
+    }
+
+    return chargeMilliAmpHours / chargeIntervalHours;
+  }
+
+  const currentMilliAmps = currentToMilliAmps(item.current, item.currentUnit);
+  if (currentMilliAmps <= 0) {
+    return 0;
+  }
+
+  if (isContinuousInterval(item.interval)) {
+    return currentMilliAmps;
+  }
+
+  if (!item.duration || !item.interval) {
+    return 0;
+  }
+
+  const durationSeconds = parseTimeToSeconds(item.duration);
+  const intervalSeconds = parseTimeToSeconds(item.interval);
+  if (durationSeconds <= 0 || intervalSeconds < durationSeconds) {
+    return 0;
+  }
+
+  return currentMilliAmps * (durationSeconds / intervalSeconds);
+};
+
+export const computeTotalAverageCurrentMilliAmps = (items = [], idleCurrentMilliAmps = 0) => {
+  const idle = Number(idleCurrentMilliAmps);
+  const idleContribution = Number.isFinite(idle) ? idle : 0;
+
+  return items.reduce((sum, item) => sum + itemAverageCurrentMilliAmps(item), idleContribution);
+};

@@ -62,7 +62,8 @@
               </label>
             </th>
             <th class="p-3 text-left">名称</th>
-            <th class="p-3 text-left w-40">电流</th>
+            <th class="p-3 text-left w-32">输入方式</th>
+            <th class="p-3 text-left w-44">电流 / 单次耗电量</th>
             <th class="p-3 text-left">单次运行时间</th>
             <th class="p-3 text-left">运行间隔</th>
             <th class="p-3 text-left w-32">每天运行次数</th>
@@ -93,7 +94,18 @@
               />
             </td>
             <td class="p-3">
-              <div class="flex gap-2">
+              <select
+                v-model="item.inputMode"
+                :disabled="!item.enabled"
+                @change="validateInterval(index)"
+                :class="['w-full px-2 py-2 border rounded-md text-sm bg-white transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
+              >
+                <option value="current">电流×时长</option>
+                <option value="charge">单次耗电量</option>
+              </select>
+            </td>
+            <td class="p-3">
+              <div v-if="!isChargeInputMode(item)" class="flex gap-2">
                 <input
                   v-model.number="item.current"
                   type="number"
@@ -109,17 +121,39 @@
                   <option v-for="unit in currentUnits" :key="unit" :value="unit">{{ unit }}</option>
                 </select>
               </div>
+              <div v-else class="flex gap-2">
+                <input
+                  v-model.number="item.charge"
+                  type="number"
+                  placeholder="数值"
+                  :disabled="!item.enabled"
+                  :class="['flex-1 min-w-0 px-3 py-2 border rounded-md text-sm transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
+                />
+                <select
+                  v-model="item.chargeUnit"
+                  :disabled="!item.enabled"
+                  :class="['w-20 px-2 py-2 border rounded-md text-sm bg-white transition-colors', item.enabled ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none' : 'bg-gray-100 border-gray-200 cursor-not-allowed']"
+                >
+                  <option v-for="unit in batteryCapacityUnits" :key="unit" :value="unit">{{ unit }}</option>
+                </select>
+              </div>
+              <div
+                v-if="item.enabled && isChargeInputMode(item) && isContinuousInterval(item.interval)"
+                class="text-xs text-gray-500 mt-1"
+              >
+                持续运行时按每天耗电量计
+              </div>
             </td>
             <td class="p-3">
               <button
                 type="button"
                 @click="openTimeEditor(index, 'duration')"
-                :disabled="!item.enabled || isContinuousInterval(item.interval)"
-                :class="timeDisplayClass(item.enabled && !isContinuousInterval(item.interval), item.hasError)"
+                :disabled="!item.enabled || isDurationNotNeeded(item)"
+                :class="timeDisplayClass(item.enabled && !isDurationNotNeeded(item), item.hasError)"
               >
-                {{ isContinuousInterval(item.interval) ? '不需要设置' : getTimeSummary(item.duration) }}
+                {{ isDurationNotNeeded(item) ? '不需要设置' : getTimeSummary(item.duration) }}
               </button>
-              <div v-if="item.enabled && item.hasError && !isContinuousInterval(item.interval)" class="text-red-500 text-xs mt-1">
+              <div v-if="item.enabled && item.hasError && !isDurationNotNeeded(item)" class="text-red-500 text-xs mt-1">
                 运行间隔必须大于等于单次运行时间
               </div>
             </td>
@@ -202,7 +236,7 @@
             />
             <span>持续运行</span>
           </label>
-          <span class="text-xs text-gray-500">开启后将不再要求填写单次运行时间，并按 100% 占空比计算</span>
+          <span class="text-xs text-gray-500">{{ editorContinuousHint }}</span>
         </div>
         <div class="grid grid-cols-5 gap-3" :class="editorDraftIsContinuous ? 'opacity-50 pointer-events-none' : ''">
           <div>
@@ -261,6 +295,8 @@ import {
   CONTINUOUS_INTERVAL,
   isContinuousInterval,
   formatRunsPerDayDisplay,
+  isChargeInputMode,
+  computeTotalAverageCurrentMilliAmps,
 } from './schedule';
 import './styles/index.css'
 const projectName = ref('');
@@ -280,8 +316,11 @@ const createEmptyIntervalParts = () => ({
 const createDefaultItem = () => ({
   enabled: true,
   name: '',
+  inputMode: 'current',
   current: null,
   currentUnit: 'mA',
+  charge: null,
+  chargeUnit: 'mAh',
   duration: '',
   interval: '',
   intervalParts: createEmptyIntervalParts(),
@@ -295,6 +334,12 @@ const editorField = ref('interval');
 const editorDraftParts = ref(createEmptyIntervalParts());
 const editorHasError = ref(false);
 const editorDraftIsContinuous = ref(false);
+const editorItem = computed(() => (editorIndex.value === null ? null : items.value[editorIndex.value]));
+const editorContinuousHint = computed(() => (
+  isChargeInputMode(editorItem.value)
+    ? '开启后按每天耗电量计算平均电流'
+    : '开启后将不再要求填写单次运行时间，并按 100% 占空比计算'
+));
 
 // 全选/取消全选
 const allEnabled = computed(() => {
@@ -322,6 +367,8 @@ const timeDisplayClass = (enabled, hasError) => ([
     : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed',
 ]);
 
+const isDurationNotNeeded = (item) => isChargeInputMode(item) || isContinuousInterval(item.interval);
+
 const getItemTimeParts = (item, field) => {
   const value = item[field];
   if (!value || isContinuousInterval(value)) {
@@ -346,6 +393,12 @@ const updateEditorError = () => {
   }
 
   const item = items.value[editorIndex.value];
+  if (isChargeInputMode(item)) {
+    // 耗电量模式不使用单次运行时间，无需与运行间隔做交叉校验
+    editorHasError.value = false;
+    return;
+  }
+
   const draftValue = editorDraftIsContinuous.value ? CONTINUOUS_INTERVAL : formatIntervalFromParts(editorDraftParts.value);
   const otherField = editorField.value === 'interval' ? 'duration' : 'interval';
 
@@ -426,7 +479,7 @@ const getTimeSummary = (value) => formatTimeSummary(value);
 
 const validateInterval = (index) => {
   const item = items.value[index];
-  if (isContinuousInterval(item.interval) || !item.duration || !item.interval) {
+  if (isChargeInputMode(item) || isContinuousInterval(item.interval) || !item.duration || !item.interval) {
     item.hasError = false;
     return;
   }
@@ -529,8 +582,11 @@ const importProject = (event) => {
           ...createDefaultItem(),
           enabled: item.enabled ?? true,
           name: item.name || '',
+          inputMode: item.inputMode === 'charge' ? 'charge' : 'current',
           current: item.current ?? null,
           currentUnit: item.currentUnit || 'mA',
+          charge: item.charge ?? null,
+          chargeUnit: item.chargeUnit || 'mAh',
           duration: item.duration || '',
           interval,
           intervalParts: isContinuous ? createEmptyIntervalParts() : (interval ? secondsToIntervalParts(parseTimeToSeconds(interval)) : createEmptyIntervalParts()),
@@ -551,49 +607,13 @@ const calculateBatteryLife = () => {
   const batteryCapacityMilliAmpHours = capacityToMilliAmpHours(batteryCapacity.value, batteryCapacityUnit.value);
   if (!batteryCapacityMilliAmpHours) return '0年0天0时0分0秒';
 
-  let totalAvgCurrent = 0; // 总平均电流 (mA)
-
-  // 计算每项任务的平均电流贡献（只计算启用的项目）
-  items.value.forEach(item => {
-    if (!item.enabled || !item.current) {
-      return;
-    }
-
-    const currentMilliAmps = currentToMilliAmps(item.current, item.currentUnit);
-    if (currentMilliAmps <= 0) {
-      return;
-    }
-
-    if (isContinuousInterval(item.interval)) {
-      totalAvgCurrent += currentMilliAmps;
-      return;
-    }
-
-    if (!item.duration || !item.interval) {
-      return;
-    }
-
-    const durationSec = parseTimeToSeconds(item.duration);
-    const intervalSec = parseTimeToSeconds(item.interval);
-
-    if (intervalSec >= durationSec && durationSec > 0) {
-      // 平均电流 = 工作电流 × 占空比
-      const avgCurrent = currentMilliAmps * (durationSec / intervalSec);
-      totalAvgCurrent += avgCurrent;
-    }
-  });
-
-  // 加上待机电流
   const idleCurrentMilliAmps = currentToMilliAmps(idleCurrent.value, idleCurrentUnit.value);
-  if (idleCurrentMilliAmps) {
-    totalAvgCurrent += idleCurrentMilliAmps;
-  }
+  const totalAvgCurrent = computeTotalAverageCurrentMilliAmps(items.value, idleCurrentMilliAmps);
 
-  if (totalAvgCurrent === 0) return '0年0天0时0分0秒';
+  if (totalAvgCurrent <= 0) return '0年0天0时0分0秒';
 
-  // 总小时 = 容量 / 总平均电流
-  const totalHours = batteryCapacityMilliAmpHours / totalAvgCurrent;
-  const totalSeconds = Math.floor(totalHours * 3600);
+  // 总秒数 = 容量(mAh) / 总平均电流(mA) × 3600
+  const totalSeconds = Math.floor((batteryCapacityMilliAmpHours / totalAvgCurrent) * 3600);
 
   const years = Math.floor(totalSeconds / (365 * 86400));
   const days = Math.floor((totalSeconds % (365 * 86400)) / 86400);
