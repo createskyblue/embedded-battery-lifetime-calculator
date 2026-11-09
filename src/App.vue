@@ -148,13 +148,16 @@
               <button
                 type="button"
                 @click="openTimeEditor(index, 'duration')"
-                :disabled="!item.enabled || isDurationNotNeeded(item)"
-                :class="timeDisplayClass(item.enabled && !isDurationNotNeeded(item), item.hasError)"
+                :disabled="!canEditDuration(item)"
+                :class="timeDisplayClass(canEditDuration(item), item.hasError || !!getDurationWarning(item))"
               >
                 {{ isDurationNotNeeded(item) ? '不需要设置' : getTimeSummary(item.duration) }}
               </button>
               <div v-if="item.enabled && item.hasError && !isDurationNotNeeded(item)" class="text-red-500 text-xs mt-1">
                 运行间隔必须大于等于单次运行时间
+              </div>
+              <div v-else-if="getDurationWarning(item)" class="text-red-500 text-xs mt-1">
+                {{ getDurationWarning(item) }}
               </div>
             </td>
             <td class="p-3">
@@ -199,8 +202,14 @@
 
       <div class="mt-8 p-4 bg-gray-100 rounded">
         <h2 class="text-xl font-semibold mb-2">电池寿命计算结果</h2>
-        <div class="text-2xl font-mono">
+        <div v-if="incompleteCount" class="text-base text-red-600">
+          有 {{ incompleteCount }} 项参数未填好，已停止计算。请补全或禁用这些项后再查看结果
+        </div>
+        <div v-else class="text-2xl font-mono">
           {{ calculateBatteryLife() }}
+        </div>
+        <div v-if="hasChargeModeItems && !incompleteCount" class="mt-3 text-xs text-gray-500 leading-relaxed">
+          单次耗电量模式下，待机电流被视为全天 24 小时恒定的基础电流；若填的是整机实测一次耗电量，其中已含这段基础电流，会重复计算，结果偏保守。推荐改用「电流×时长」输入方式，可分别填写工作电流与单次运行时间。
         </div>
       </div>
 
@@ -297,13 +306,14 @@ import {
   formatRunsPerDayDisplay,
   isChargeInputMode,
   computeTotalAverageCurrentMilliAmps,
+  getItemIncompleteReason,
 } from './schedule';
 import './styles/index.css'
 const projectName = ref('');
 const batteryCapacity = ref(null);
 const batteryCapacityUnit = ref('mAh');
 const idleCurrent = ref(null);
-const idleCurrentUnit = ref('mA');
+const idleCurrentUnit = ref('uA');
 const currentUnits = ['A', 'mA', 'uA', 'nA'];
 const batteryCapacityUnits = ['Ah', 'mAh', 'uAh', 'nAh'];
 const createEmptyIntervalParts = () => ({
@@ -320,7 +330,7 @@ const createDefaultItem = () => ({
   current: null,
   currentUnit: 'mA',
   charge: null,
-  chargeUnit: 'mAh',
+  chargeUnit: 'uAh',
   duration: '',
   interval: '',
   intervalParts: createEmptyIntervalParts(),
@@ -339,6 +349,11 @@ const editorContinuousHint = computed(() => (
   isChargeInputMode(editorItem.value)
     ? '开启后按每天耗电量计算平均电流'
     : '开启后将不再要求填写单次运行时间，并按 100% 占空比计算'
+));
+
+// 是否有参与计算的「单次耗电量」负载，用于显示口径提示
+const hasChargeModeItems = computed(() => items.value.some(
+  (item) => item.enabled && isChargeInputMode(item),
 ));
 
 // 全选/取消全选
@@ -367,7 +382,33 @@ const timeDisplayClass = (enabled, hasError) => ([
     : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed',
 ]);
 
-const isDurationNotNeeded = (item) => isChargeInputMode(item) || isContinuousInterval(item.interval);
+// 持续运行没有「单次」概念，其余模式都可以编辑单次运行时间
+const isDurationNotNeeded = (item) => isContinuousInterval(item.interval);
+
+const canEditDuration = (item) => item.enabled && !isDurationNotNeeded(item);
+
+const hasMissingDuration = (item) => canEditDuration(item)
+  && (!item.duration || parseTimeToSeconds(item.duration) <= 0);
+
+// 任一项参数不完整就不显示结果，避免漏算被当成正常结果
+const incompleteCount = computed(() => items.value.filter(
+  (item) => getItemIncompleteReason(item),
+).length);
+
+// 表格里指出这一项缺什么；耗电量模式的运行时间是选填，只警告不阻断
+const getDurationWarning = (item) => {
+  if (item.hasError) {
+    return '';
+  }
+  const reason = getItemIncompleteReason(item);
+  if (reason) {
+    return reason;
+  }
+  if (isChargeInputMode(item) && hasMissingDuration(item)) {
+    return '未设置单次运行时间；已设置运行间隔时仍按单次耗电量计算';
+  }
+  return '';
+};
 
 const getItemTimeParts = (item, field) => {
   const value = item[field];
@@ -394,7 +435,7 @@ const updateEditorError = () => {
 
   const item = items.value[editorIndex.value];
   if (isChargeInputMode(item)) {
-    // 耗电量模式不使用单次运行时间，无需与运行间隔做交叉校验
+    // 耗电量模式的单次运行时间仅作记录，不参与计算和交叉校验
     editorHasError.value = false;
     return;
   }
@@ -415,7 +456,10 @@ const updateEditorError = () => {
 
 const openTimeEditor = (index, field) => {
   const item = items.value[index];
-  if (!item.enabled) {
+  const allowed = field === 'duration'
+    ? canEditDuration(item)
+    : (field === 'interval' && item.enabled);
+  if (!allowed) {
     return;
   }
 
@@ -574,7 +618,7 @@ const importProject = (event) => {
       batteryCapacity.value = data.batteryCapacity ?? null;
       batteryCapacityUnit.value = data.batteryCapacityUnit || 'mAh';
       idleCurrent.value = data.idleCurrent ?? null;
-      idleCurrentUnit.value = data.idleCurrentUnit || 'mA';
+      idleCurrentUnit.value = data.idleCurrentUnit || 'uA';
       items.value = (data.items || [createDefaultItem()]).map((item) => {
         const interval = item.interval || '';
         const isContinuous = isContinuousInterval(interval);
@@ -586,7 +630,7 @@ const importProject = (event) => {
           current: item.current ?? null,
           currentUnit: item.currentUnit || 'mA',
           charge: item.charge ?? null,
-          chargeUnit: item.chargeUnit || 'mAh',
+          chargeUnit: item.chargeUnit || 'uAh',
           duration: item.duration || '',
           interval,
           intervalParts: isContinuous ? createEmptyIntervalParts() : (interval ? secondsToIntervalParts(parseTimeToSeconds(interval)) : createEmptyIntervalParts()),

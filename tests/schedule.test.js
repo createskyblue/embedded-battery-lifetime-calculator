@@ -21,6 +21,7 @@ import {
   isChargeInputMode,
   itemAverageCurrentMilliAmps,
   computeTotalAverageCurrentMilliAmps,
+  getItemIncompleteReason,
 } from '../src/schedule.js';
 
 test('converts interval to runs per day', () => {
@@ -249,4 +250,43 @@ test('sums item average currents with idle current', () => {
 
   // 10 mA + 1 mA + 0 mA + 0.05 mA 待机
   assert.ok(Math.abs(computeTotalAverageCurrentMilliAmps(items, 0.05) - 11.05) < 1e-9);
+});
+
+test('reports why a current-mode item is incomplete', () => {
+  const base = { enabled: true, inputMode: 'current', current: 100, currentUnit: 'mA', duration: '00:00:00:06', interval: '00:00:01:00' };
+  assert.equal(getItemIncompleteReason(base), '');
+  assert.equal(getItemIncompleteReason({ ...base, enabled: false }), '');
+  assert.equal(getItemIncompleteReason({ ...base, current: null }), '工作电流未填写');
+  assert.equal(getItemIncompleteReason({ ...base, duration: '' }), '单次运行时间未填写');
+  assert.equal(getItemIncompleteReason({ ...base, interval: '' }), '运行间隔未填写');
+  assert.equal(getItemIncompleteReason({ ...base, interval: '00:00:00:03' }), '运行间隔小于单次运行时间');
+  assert.equal(getItemIncompleteReason({ ...base, interval: CONTINUOUS_INTERVAL }), '');
+});
+
+test('charge mode only requires charge and interval', () => {
+  const base = { enabled: true, inputMode: 'charge', charge: 200, chargeUnit: 'uAh', duration: '', interval: '00:01:00:00' };
+  assert.equal(getItemIncompleteReason(base), '');
+  assert.equal(getItemIncompleteReason({ ...base, charge: null }), '单次耗电量未填写');
+  assert.equal(getItemIncompleteReason({ ...base, interval: '' }), '运行间隔未填写');
+  assert.equal(getItemIncompleteReason({ ...base, interval: CONTINUOUS_INTERVAL }), '');
+});
+
+test('incomplete reasons match the items that would be silently dropped', () => {
+  const base = { enabled: true, inputMode: 'current', current: 100, currentUnit: 'mA', duration: '', interval: '' };
+  const cases = [
+    base,
+    { ...base, duration: '00:00:00:06' },
+    { ...base, interval: '00:00:01:00' },
+    { ...base, duration: '00:00:00:06', interval: '00:00:00:03' },
+    { ...base, duration: '00:00:00:06', interval: '00:00:01:00' },
+    { ...base, interval: CONTINUOUS_INTERVAL },
+    { enabled: true, inputMode: 'charge', charge: 200, chargeUnit: 'uAh', interval: '' },
+    { enabled: true, inputMode: 'charge', charge: 200, chargeUnit: 'uAh', interval: '00:01:00:00' },
+    { enabled: true, inputMode: 'charge', charge: 200, chargeUnit: 'uAh', interval: CONTINUOUS_INTERVAL },
+  ];
+  for (const item of cases) {
+    const hasReason = getItemIncompleteReason(item) !== '';
+    const dropped = itemAverageCurrentMilliAmps(item) === 0;
+    assert.equal(hasReason, dropped, JSON.stringify(item));
+  }
 });

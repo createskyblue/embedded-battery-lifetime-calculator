@@ -301,3 +301,42 @@ export const computeTotalAverageCurrentMilliAmps = (items = [], idleCurrentMilli
 
   return items.reduce((sum, item) => sum + itemAverageCurrentMilliAmps(item), idleContribution);
 };
+
+// 返回负载参数不完整的原因，空字符串表示该项可以正常参与计算
+// 与 itemAverageCurrentMilliAmps 返回 0 的分支一一对应，避免漏算被静默忽略
+export const getItemIncompleteReason = (item) => {
+  if (!item || !item.enabled) {
+    return '';
+  }
+
+  const continuous = isContinuousInterval(item.interval);
+
+  if (isChargeInputMode(item)) {
+    if (capacityToMilliAmpHours(item.charge, item.chargeUnit) <= 0) {
+      return '单次耗电量未填写';
+    }
+    if (!continuous && parseTimeToSeconds(item.interval) <= 0) {
+      return '运行间隔未填写';
+    }
+    return '';
+  }
+
+  if (currentToMilliAmps(item.current, item.currentUnit) <= 0) {
+    return '工作电流未填写';
+  }
+  if (continuous) {
+    return '';
+  }
+  const durationSeconds = parseTimeToSeconds(item.duration);
+  const intervalSeconds = parseTimeToSeconds(item.interval);
+  if (durationSeconds <= 0) {
+    return '单次运行时间未填写';
+  }
+  if (intervalSeconds <= 0) {
+    return '运行间隔未填写';
+  }
+  if (intervalSeconds < durationSeconds) {
+    return '运行间隔小于单次运行时间';
+  }
+  return '';
+};
